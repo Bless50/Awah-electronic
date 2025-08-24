@@ -39,14 +39,38 @@ export function MobileMoneyPayment({
       return
     }
 
-    // Basic phone number validation for Cameroon
-    const cleanPhone = phoneNumber.replace(/\s/g, '').replace(/^\+237/, '')
-    const phoneRegex = /^(6[5-9]\d{7}|2[0-9]\d{8})$/
-    if (!phoneRegex.test(cleanPhone)) {
+    // Validate exact StarterPay format: +2376XXXXXXXX (12 digits total)
+    const cleanPhone = phoneNumber.replace(/[\s\-\(\)]/g, '') // Remove spaces, dashes, parentheses
+    
+    // Debug: Log what we're validating
+    console.log('Validating phone:', phoneNumber)
+    console.log('Cleaned phone:', cleanPhone)
+    console.log('Regex test result:', cleanPhone.match(/^\+2376\d{8}$/))
+    
+    // Must be exactly +2376XXXXXXXX format (StarterPay requirement)
+    if (!cleanPhone.match(/^\+2376\d{8}$/)) {
       setPaymentStatus('failed')
-      setStatusMessage("Please enter a valid Cameroon phone number (format: 6XXXXXXXX or 2XXXXXXXXX)")
+      setStatusMessage("Please enter phone number in exact format: +2376XXXXXXXX (must start with +2376)")
       return
     }
+    
+    // Check if using MTN test numbers for better sandbox behavior
+    // StarterPay expects exactly 2376XXXXXXXX format (12 digits total)
+    const testNumbers = ['237612345678', '237687654321', '237698765432']
+    const phoneWithoutPlus = cleanPhone.substring(1)
+    const isTestNumber = testNumbers.includes(phoneWithoutPlus)
+    
+    if (!isTestNumber) {
+      console.warn('Using non-test number. May result in PENDING status. Consider using MTN test numbers for sandbox.')
+    }
+    
+    // Remove + for StarterPay API (it expects digits only)
+    const formattedPhone = phoneWithoutPlus
+
+    // Debug: Log the formatted phone number
+    console.log('Original phone:', phoneNumber)
+    console.log('Cleaned phone:', cleanPhone)
+    console.log('Formatted phone for StarterPay:', formattedPhone)
 
     setIsProcessing(true)
     setPaymentStatus('pending')
@@ -59,7 +83,7 @@ export function MobileMoneyPayment({
         externalId: `unique_id_from_your_system_${orderReference}`,
         payer: {
           partyIdType: "MSISDN",
-          partyId: cleanPhone
+          partyId: formattedPhone
         },
         payerMessage: `Payment for product/service`,
         payeeNote: `Order #${orderReference}`
@@ -97,7 +121,11 @@ export function MobileMoneyPayment({
         }, 2000) // Give user time to see the success response
       } else {
         setPaymentStatus('failed')
-        setStatusMessage(finalStatus.data?.status === 'FAILED' ? "Payment was declined" : "Payment failed. Please try again.")
+        if (finalStatus.data?.status === 'FAILED') {
+          setStatusMessage("Payment was declined")
+        } else {
+          setStatusMessage("Payment timed out. This often happens with real phone numbers in sandbox mode. Try using a test number: +237612345678")
+        }
       }
 
     } catch (error) {
@@ -162,14 +190,20 @@ export function MobileMoneyPayment({
               <Input
                 id="phone"
                 type="tel"
-                placeholder="6XXXXXXXX or 2XXXXXXXXX"
+                placeholder="+237612345678 (test number)"
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}
                 className="mt-1"
               />
-              <p className="text-sm text-muted-foreground mt-1">
-                Enter your {provider} Mobile Money number
-              </p>
+              <div className="text-sm text-muted-foreground mt-1 space-y-1">
+                <p>Enter phone number in format: +2376XXXXXXXX (12 digits total)</p>
+                <p className="text-blue-600">
+                  <strong>For testing:</strong> Use +237612345678, +237687654321, or +237698765432
+                </p>
+                <p className="text-xs text-amber-600">
+                  Note: Real numbers may stay PENDING in sandbox mode
+                </p>
+              </div>
             </div>
 
             <div className="pt-4 border-t">
@@ -184,6 +218,14 @@ export function MobileMoneyPayment({
                   <strong>How it works:</strong> Click "Pay" to initiate the payment request. 
                   You'll receive an SMS on your phone to confirm the payment with your PIN.
                 </p>
+                {!phoneNumber.includes('12345678') && !phoneNumber.includes('87654321') && !phoneNumber.includes('98765432') && phoneNumber.length > 5 && (
+                  <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded">
+                    <p className="text-xs text-amber-700">
+                      ⚠️ <strong>Sandbox Notice:</strong> Real phone numbers may remain pending. 
+                      For testing, use: +237612345678
+                    </p>
+                  </div>
+                )}
               </div>
               
               <Button 

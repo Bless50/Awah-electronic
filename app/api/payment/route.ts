@@ -5,7 +5,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { action, ...paymentData } = body
 
-    const apiKey = process.env.STARTERPAY_API_KEY
+    const apiKey = 'sk_sandbox_f1406bbf-a172-4034-aa26-04a572ff132e'
     
     if (!apiKey) {
       return NextResponse.json(
@@ -14,26 +14,40 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const baseUrl = 'https://sandbox-api.starterpay.cm/v1'
+    const baseUrl = 'https://starter-pay.vercel.app/api/sandbox'
 
     if (action === 'request-payment') {
 
       try {
-        const response = await fetch(`${baseUrl}/collections/request-to-pay`, {
+        // Transform the data to match StarterPay's expected format (exactly like dashboard)
+        const starterPayData = {
+          amount: parseInt(paymentData.amount),
+          currency: 'XAF', // Force XAF for sandbox
+          externalId: paymentData.externalId,
+          payerPhone: paymentData.payer.partyId, // Direct phone number
+          payerMessage: paymentData.payerMessage || 'Payment for product/service',
+          payeeNote: paymentData.payeeNote || `Order #${paymentData.externalId}`
+        }
+
+        console.log('Sending payment request to StarterPay:', starterPayData)
+        
+        const response = await fetch(`${baseUrl}/collect-payment`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
             'Authorization': `Bearer ${apiKey}`,
-            'X-Reference-Id': paymentData.externalId,
-            'X-Target-Environment': 'sandbox'
+            'Content-Type': 'application/json',
           },
-          body: JSON.stringify(paymentData),
+          body: JSON.stringify(starterPayData),
         })
+        
+        console.log('StarterPay response status:', response.status)
 
         let result
         try {
           result = await response.json()
+          console.log('StarterPay response body:', result)
         } catch (jsonError) {
+          console.log('Failed to parse StarterPay response as JSON')
           return NextResponse.json({
             success: false,
             error: {
@@ -47,10 +61,11 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({
             success: false,
             error: {
-              code: result.error?.code || 'REQUEST_FAILED',
-              message: result.error?.message || `Payment request failed: ${response.statusText}`
+              code: (result && (result.code || result.error)) || 'REQUEST_FAILED',
+              message: (result && (result.message || result.error || (result.details && result.details[0]?.message))) || `Payment request failed: ${response.statusText}`,
+              details: result?.details
             }
-          })
+          }, { status: response.status })
         }
 
         return NextResponse.json({
@@ -70,18 +85,42 @@ export async function POST(request: NextRequest) {
 
     if (action === 'check-status') {
       const { transactionId } = paymentData
-      const response = await fetch(`${baseUrl}/collections/${transactionId}/status`, {
+      
+      console.log('Checking status for transaction:', transactionId)
+      console.log('Status check URL:', `${baseUrl}/transactions/${transactionId}`)
+      
+      const response = await fetch(`${baseUrl}/transactions/${transactionId}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
-          'X-Target-Environment': 'sandbox'
+          'Content-Type': 'application/json',
         },
       })
 
-      const result = await response.json()
+      let result
+      try {
+        result = await response.json()
+      } catch (jsonError) {
+        return NextResponse.json({
+          success: false,
+          error: {
+            code: 'INVALID_RESPONSE',
+            message: 'Invalid JSON response from status check'
+          }
+        }, { status: 500 })
+      }
+      
+      console.log('Status check response:', response.status, result)
       
       if (!response.ok) {
-        return NextResponse.json({ success: false })
+        return NextResponse.json({
+          success: false,
+          error: {
+            code: (result && (result.code || result.error)) || 'REQUEST_FAILED',
+            message: (result && (result.message || result.error)) || `Status check failed: ${response.statusText}`,
+            details: result?.details
+          }
+        }, { status: response.status })
       }
 
       return NextResponse.json({
@@ -108,3 +147,4 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+

@@ -92,24 +92,49 @@ class PaymentService {
     }
   }
 
-  // Poll transaction status until completion
+  // Poll transaction status until completion (matching dashboard behavior)
   async pollTransactionStatus(
     transactionId: string, 
-    maxAttempts: number = 30, 
-    intervalMs: number = 2000
+    maxAttempts: number = 60, 
+    intervalMs: number = 3000
   ): Promise<TransactionStatusResponse> {
+    console.log(`Starting to poll transaction ${transactionId}`)
+    
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      console.log(`Polling attempt ${attempt + 1}/${maxAttempts}`)
       const status = await this.checkTransactionStatus(transactionId)
       
-      if (status.success && status.data && 
-          (status.data.status === 'SUCCESSFUL' || status.data.status === 'FAILED')) {
-        return status
+      console.log('Status response:', status)
+      
+      if (status.success && status.data) {
+        console.log('Transaction status:', status.data.status)
+        
+        if (status.data.status === 'SUCCESSFUL' || status.data.status === 'FAILED') {
+          console.log('Final status reached:', status.data.status)
+          return status
+        }
+        
+        if (status.data.status === 'PENDING') {
+          console.log('Still pending, continuing to poll...')
+        }
+      } else {
+        console.log('Status check failed:', status)
+        
+        // If status check fails repeatedly, assume network issues
+        if (attempt > 5) {
+          console.log('Multiple status check failures, treating as network error')
+          return {
+            success: false
+          }
+        }
       }
 
-      // Wait before next attempt
+      // Wait before next attempt (same as dashboard: 3 seconds)
       await new Promise(resolve => setTimeout(resolve, intervalMs))
     }
 
+    console.log('Polling timed out after', maxAttempts, 'attempts')
+    console.log('This often happens when background status updates are not working')
     return {
       success: false
     }
