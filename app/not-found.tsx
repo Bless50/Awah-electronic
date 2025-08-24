@@ -1,5 +1,8 @@
 import Link from 'next/link'
 
+export const dynamic = 'force-static'
+export const revalidate = false
+
 export default function NotFound() {
   return (
     <div className="min-h-screen bg-background">
