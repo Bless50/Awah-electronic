@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { createContext, useContext, useEffect, useState, useCallback } from "react"
-import type { User } from "@supabase/supabase-js"
+import type { User, AuthChangeEvent, Session } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/client"
 
 interface Profile {
@@ -35,9 +35,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   const [isHydrated, setIsHydrated] = useState(false)
-  const supabase = createClient()
+  
+  // Handle missing environment variables gracefully
+  let supabase: any = null
+  try {
+    supabase = createClient()
+  } catch (error) {
+    console.warn('Supabase client initialization failed:', error)
+  }
 
   const fetchProfile = useCallback(async (userId: string) => {
+    if (!supabase) return
     try {
       const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single()
 
@@ -54,6 +62,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setIsHydrated(true)
+    
+    if (!supabase) {
+      setLoading(false)
+      return
+    }
     
     const fetchUserProfile = async (userId: string) => {
       try {
@@ -72,37 +85,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Get initial session
     const getInitialSession = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
 
-      if (session?.user) {
-        setUser(session.user)
-        await fetchUserProfile(session.user.id)
+        if (session?.user) {
+          setUser(session.user)
+          await fetchUserProfile(session.user.id)
+        }
+        setLoading(false)
+      } catch (error) {
+        console.error('Error getting session:', error)
+        setLoading(false)
       }
-      setLoading(false)
     }
 
     getInitialSession()
 
     // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        setUser(session.user)
-        await fetchUserProfile(session.user.id)
-      } else {
-        setUser(null)
-        setProfile(null)
-      }
-      setLoading(false)
-    })
+    try {
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
+        if (session?.user) {
+          setUser(session.user)
+          await fetchUserProfile(session.user.id)
+        } else {
+          setUser(null)
+          setProfile(null)
+        }
+        setLoading(false)
+      })
 
-    return () => subscription.unsubscribe()
-  }, [])
+      return () => subscription.unsubscribe()
+    } catch (error) {
+      console.error('Error setting up auth listener:', error)
+      setLoading(false)
+    }
+  }, [supabase])
 
   const signUp = async (email: string, password: string, fullName: string) => {
+    if (!supabase) return { error: 'Authentication not available' }
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -122,6 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signIn = async (email: string, password: string) => {
+    if (!supabase) return { error: 'Authentication not available' }
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -135,11 +160,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signOut = async () => {
+    if (!supabase) return
     await supabase.auth.signOut()
   }
 
   const updateProfile = async (updates: Partial<Profile>) => {
     if (!user) return { error: "No user logged in" }
+    if (!supabase) return { error: 'Authentication not available' }
 
     try {
       const { data, error } = await supabase
