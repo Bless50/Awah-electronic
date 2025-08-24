@@ -1,5 +1,5 @@
 import { Header } from "@/components/header"
-import { LoginForm } from "@/components/auth/login-form"
+import { LoginFormWrapper } from "@/components/auth/login-form-wrapper"
 import Link from "next/link"
 
 export default function LoginPage() {
@@ -14,7 +14,7 @@ export default function LoginPage() {
             <p className="text-muted-foreground">Sign in to your Awah Electronics account</p>
           </div>
 
-          <LoginForm />
+          <LoginFormWrapper />
 
           <div className="text-center mt-6">
             <p className="text-sm text-muted-foreground">
